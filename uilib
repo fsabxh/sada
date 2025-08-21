@@ -1,106 +1,650 @@
--- // Tokyo UI Library (Fixed Base) // --
-
-local HttpService = game:GetService("HttpService")
-
-local folderPath = "C:\\TokyoConfigs"
-if not isfolder(folderPath) then
-    makefolder(folderPath)
-end
+-- // Tokyo UI Library (Enhanced Version) // --
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local library = {
     flags = {},
     binds = {},
     cheatname = "Tokyo",
-    gamename = "Da Hood"
+    gamename = "Da Hood",
+    mainFrame = nil,
+    currentTab = nil,
+    tweenInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 }
+
+-- // Colors
+local colors = {
+    background = Color3.fromRGB(25, 25, 25),
+    secondary = Color3.fromRGB(35, 35, 35),
+    accent = Color3.fromRGB(0, 162, 255),
+    text = Color3.fromRGB(255, 255, 255),
+    textSecondary = Color3.fromRGB(180, 180, 180),
+    border = Color3.fromRGB(60, 60, 60)
+}
+
+-- // Utility Functions
+local function createCorner(parent, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 8)
+    corner.Parent = parent
+    return corner
+end
+
+local function createStroke(parent, color, thickness)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or colors.border
+    stroke.Thickness = thickness or 1
+    stroke.Parent = parent
+    return stroke
+end
 
 -- // Init
 function library:init()
     print(self.cheatname .. " | " .. self.gamename .. " loaded.")
-end
-
--- // Save Config
-function library:SaveConfig(name)
-    local path = folderPath .. "\\" .. name .. ".json"
-    writefile(path, HttpService:JSONEncode(self.flags))
-    print("Config saved:", path)
-end
-
--- // Load Config
-function library:LoadConfig(name)
-    local path = folderPath .. "\\" .. name .. ".json"
-    if isfile(path) then
-        local data = HttpService:JSONDecode(readfile(path))
-        for k,v in pairs(data) do
-            self.flags[k] = v
-        end
-        print("Config loaded:", path)
-    else
-        warn("Config not found:", name)
-    end
+    
+    -- Create main ScreenGui
+    self.screenGui = Instance.new("ScreenGui")
+    self.screenGui.Name = "TokyoUI"
+    self.screenGui.Parent = game.CoreGui
+    self.screenGui.ResetOnSpawn = false
+    
+    -- Initialize watermark and keybind list
+    self:Watermark()
+    self:KeybindList()
 end
 
 -- // Window
 function library.NewWindow(args)
+    args = args or {}
+    local windowTitle = args.title or "Tokyo"
+    
     local window = {}
     window.tabs = {}
-
+    window.tabButtons = {}
+    window.currentTab = nil
+    
+    -- Create main frame
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "MainFrame"
+    mainFrame.Size = UDim2.new(0, 600, 0, 400)
+    mainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
+    mainFrame.BackgroundColor3 = colors.background
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = library.screenGui
+    createCorner(mainFrame, 12)
+    createStroke(mainFrame, colors.border, 2)
+    
+    -- Make draggable
+    local dragging, dragInput, startPos
+    local function updateDrag(input)
+        local delta = input.Position - startPos
+        mainFrame.Position = UDim2.new(0, delta.X, 0, delta.Y)
+    end
+    
+    mainFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            startPos = input.Position - mainFrame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+    
+    mainFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            updateDrag(input)
+        end
+    end)
+    
+    -- Title bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 40)
+    titleBar.Position = UDim2.new(0, 0, 0, 0)
+    titleBar.BackgroundColor3 = colors.secondary
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = mainFrame
+    createCorner(titleBar, 12)
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -20, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = windowTitle
+    titleLabel.TextColor3 = colors.text
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = titleBar
+    
+    -- Tab container
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Name = "TabContainer"
+    tabContainer.Size = UDim2.new(0, 120, 1, -40)
+    tabContainer.Position = UDim2.new(0, 0, 0, 40)
+    tabContainer.BackgroundColor3 = colors.secondary
+    tabContainer.BorderSizePixel = 0
+    tabContainer.Parent = mainFrame
+    
+    local tabList = Instance.new("UIListLayout")
+    tabList.SortOrder = Enum.SortOrder.LayoutOrder
+    tabList.Padding = UDim.new(0, 2)
+    tabList.Parent = tabContainer
+    
+    -- Content frame
+    local contentFrame = Instance.new("ScrollingFrame")
+    contentFrame.Name = "ContentFrame"
+    contentFrame.Size = UDim2.new(1, -120, 1, -40)
+    contentFrame.Position = UDim2.new(0, 120, 0, 40)
+    contentFrame.BackgroundColor3 = colors.background
+    contentFrame.BorderSizePixel = 0
+    contentFrame.ScrollBarThickness = 6
+    contentFrame.ScrollBarImageColor3 = colors.accent
+    contentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+    contentFrame.Parent = mainFrame
+    
+    library.mainFrame = mainFrame
+    
     function window:AddTab(name)
         local tab = {}
         tab.sections = {}
-
+        tab.name = name
+        
+        -- Create tab button
+        local tabButton = Instance.new("TextButton")
+        tabButton.Name = name .. "Tab"
+        tabButton.Size = UDim2.new(1, 0, 0, 35)
+        tabButton.BackgroundColor3 = colors.background
+        tabButton.BorderSizePixel = 0
+        tabButton.Text = name
+        tabButton.TextColor3 = colors.textSecondary
+        tabButton.TextScaled = true
+        tabButton.Font = Enum.Font.Gotham
+        tabButton.Parent = tabContainer
+        createCorner(tabButton, 6)
+        
+        -- Create tab content
+        local tabContent = Instance.new("Frame")
+        tabContent.Name = name .. "Content"
+        tabContent.Size = UDim2.new(1, -20, 0, 0)
+        tabContent.Position = UDim2.new(0, 10, 0, 10)
+        tabContent.BackgroundTransparency = 1
+        tabContent.Visible = false
+        tabContent.Parent = contentFrame
+        
+        local tabLayout = Instance.new("UIListLayout")
+        tabLayout.SortOrder = Enum.SortOrder.LayoutOrder
+        tabLayout.Padding = UDim.new(0, 10)
+        tabLayout.Parent = tabContent
+        
+        -- Tab switching
+        tabButton.MouseButton1Click:Connect(function()
+            -- Hide all tabs
+            for _, content in pairs(contentFrame:GetChildren()) do
+                if content:IsA("Frame") and content.Name:find("Content") then
+                    content.Visible = false
+                end
+            end
+            
+            -- Reset all tab buttons
+            for _, button in pairs(tabContainer:GetChildren()) do
+                if button:IsA("TextButton") then
+                    button.BackgroundColor3 = colors.background
+                    button.TextColor3 = colors.textSecondary
+                end
+            end
+            
+            -- Show selected tab
+            tabContent.Visible = true
+            tabButton.BackgroundColor3 = colors.accent
+            tabButton.TextColor3 = colors.text
+            window.currentTab = tab
+        end)
+        
+        -- Select first tab by default
+        if not window.currentTab then
+            tabContent.Visible = true
+            tabButton.BackgroundColor3 = colors.accent
+            tabButton.TextColor3 = colors.text
+            window.currentTab = tab
+        end
+        
         function tab:AddSection(secName, side)
             local section = {}
             section.name = secName
-
+            
+            -- Create section frame
+            local sectionFrame = Instance.new("Frame")
+            sectionFrame.Name = secName .. "Section"
+            sectionFrame.Size = UDim2.new(1, 0, 0, 30)
+            sectionFrame.BackgroundColor3 = colors.secondary
+            sectionFrame.BorderSizePixel = 0
+            sectionFrame.Parent = tabContent
+            createCorner(sectionFrame, 8)
+            createStroke(sectionFrame, colors.border, 1)
+            
+            -- Section title
+            local sectionTitle = Instance.new("TextLabel")
+            sectionTitle.Size = UDim2.new(1, -20, 0, 30)
+            sectionTitle.Position = UDim2.new(0, 10, 0, 0)
+            sectionTitle.BackgroundTransparency = 1
+            sectionTitle.Text = secName
+            sectionTitle.TextColor3 = colors.text
+            sectionTitle.TextScaled = true
+            sectionTitle.Font = Enum.Font.GothamBold
+            sectionTitle.TextXAlignment = Enum.TextXAlignment.Left
+            sectionTitle.Parent = sectionFrame
+            
+            -- Section content
+            local sectionContent = Instance.new("Frame")
+            sectionContent.Name = "Content"
+            sectionContent.Size = UDim2.new(1, -20, 0, 0)
+            sectionContent.Position = UDim2.new(0, 10, 0, 35)
+            sectionContent.BackgroundTransparency = 1
+            sectionContent.Parent = sectionFrame
+            
+            local sectionLayout = Instance.new("UIListLayout")
+            sectionLayout.SortOrder = Enum.SortOrder.LayoutOrder
+            sectionLayout.Padding = UDim.new(0, 5)
+            sectionLayout.Parent = sectionContent
+            
+            local function updateSectionSize()
+                local contentSize = sectionLayout.AbsoluteContentSize.Y
+                sectionContent.Size = UDim2.new(1, -20, 0, contentSize)
+                sectionFrame.Size = UDim2.new(1, 0, 0, contentSize + 40)
+                
+                -- Update tab content size
+                local tabContentSize = tabLayout.AbsoluteContentSize.Y
+                tabContent.Size = UDim2.new(1, -20, 0, tabContentSize)
+                contentFrame.CanvasSize = UDim2.new(0, 0, 0, tabContentSize + 20)
+            end
+            
+            sectionLayout.Changed:Connect(updateSectionSize)
+            
             function section:AddToggle(name, flag, default, callback)
                 library.flags[flag] = default or false
+                
+                local toggleFrame = Instance.new("Frame")
+                toggleFrame.Size = UDim2.new(1, 0, 0, 30)
+                toggleFrame.BackgroundColor3 = colors.background
+                toggleFrame.BorderSizePixel = 0
+                toggleFrame.Parent = sectionContent
+                createCorner(toggleFrame, 6)
+                
+                local toggleLabel = Instance.new("TextLabel")
+                toggleLabel.Size = UDim2.new(1, -40, 1, 0)
+                toggleLabel.Position = UDim2.new(0, 10, 0, 0)
+                toggleLabel.BackgroundTransparency = 1
+                toggleLabel.Text = name
+                toggleLabel.TextColor3 = colors.text
+                toggleLabel.TextScaled = true
+                toggleLabel.Font = Enum.Font.Gotham
+                toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+                toggleLabel.Parent = toggleFrame
+                
+                local toggleButton = Instance.new("TextButton")
+                toggleButton.Size = UDim2.new(0, 20, 0, 20)
+                toggleButton.Position = UDim2.new(1, -25, 0.5, -10)
+                toggleButton.BackgroundColor3 = library.flags[flag] and colors.accent or colors.border
+                toggleButton.BorderSizePixel = 0
+                toggleButton.Text = ""
+                toggleButton.Parent = toggleFrame
+                createCorner(toggleButton, 4)
+                
+                toggleButton.MouseButton1Click:Connect(function()
+                    library.flags[flag] = not library.flags[flag]
+                    toggleButton.BackgroundColor3 = library.flags[flag] and colors.accent or colors.border
+                    if callback then callback(library.flags[flag]) end
+                end)
+                
+                updateSectionSize()
+                if callback then callback(library.flags[flag]) end
             end
-
+            
             function section:AddSlider(name, flag, min, max, default, callback)
                 library.flags[flag] = default or min
+                
+                local sliderFrame = Instance.new("Frame")
+                sliderFrame.Size = UDim2.new(1, 0, 0, 50)
+                sliderFrame.BackgroundColor3 = colors.background
+                sliderFrame.BorderSizePixel = 0
+                sliderFrame.Parent = sectionContent
+                createCorner(sliderFrame, 6)
+                
+                local sliderLabel = Instance.new("TextLabel")
+                sliderLabel.Size = UDim2.new(1, -60, 0, 25)
+                sliderLabel.Position = UDim2.new(0, 10, 0, 0)
+                sliderLabel.BackgroundTransparency = 1
+                sliderLabel.Text = name
+                sliderLabel.TextColor3 = colors.text
+                sliderLabel.TextScaled = true
+                sliderLabel.Font = Enum.Font.Gotham
+                sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+                sliderLabel.Parent = sliderFrame
+                
+                local valueLabel = Instance.new("TextLabel")
+                valueLabel.Size = UDim2.new(0, 50, 0, 25)
+                valueLabel.Position = UDim2.new(1, -55, 0, 0)
+                valueLabel.BackgroundTransparency = 1
+                valueLabel.Text = tostring(library.flags[flag])
+                valueLabel.TextColor3 = colors.accent
+                valueLabel.TextScaled = true
+                valueLabel.Font = Enum.Font.Gotham
+                valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+                valueLabel.Parent = sliderFrame
+                
+                local sliderBar = Instance.new("Frame")
+                sliderBar.Size = UDim2.new(1, -20, 0, 6)
+                sliderBar.Position = UDim2.new(0, 10, 1, -16)
+                sliderBar.BackgroundColor3 = colors.border
+                sliderBar.BorderSizePixel = 0
+                sliderBar.Parent = sliderFrame
+                createCorner(sliderBar, 3)
+                
+                local sliderFill = Instance.new("Frame")
+                sliderFill.Size = UDim2.new((library.flags[flag] - min) / (max - min), 0, 1, 0)
+                sliderFill.BackgroundColor3 = colors.accent
+                sliderFill.BorderSizePixel = 0
+                sliderFill.Parent = sliderBar
+                createCorner(sliderFill, 3)
+                
+                local sliderButton = Instance.new("TextButton")
+                sliderButton.Size = UDim2.new(1, 0, 1, 0)
+                sliderButton.BackgroundTransparency = 1
+                sliderButton.Text = ""
+                sliderButton.Parent = sliderBar
+                
+                local function updateSlider(input)
+                    local percent = math.clamp((input.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X, 0, 1)
+                    local value = math.floor(min + (max - min) * percent)
+                    library.flags[flag] = value
+                    valueLabel.Text = tostring(value)
+                    sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+                    if callback then callback(value) end
+                end
+                
+                sliderButton.MouseButton1Down:Connect(function()
+                    local connection
+                    connection = UserInputService.InputChanged:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseMovement then
+                            updateSlider(input)
+                        end
+                    end)
+                    
+                    UserInputService.InputEnded:Connect(function(input)
+                        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                            connection:Disconnect()
+                        end
+                    end)
+                end)
+                
+                updateSectionSize()
+                if callback then callback(library.flags[flag]) end
             end
-
+            
             function section:AddDropdown(name, flag, options, default, callback)
                 library.flags[flag] = default or options[1]
+                
+                local dropdownFrame = Instance.new("Frame")
+                dropdownFrame.Size = UDim2.new(1, 0, 0, 30)
+                dropdownFrame.BackgroundColor3 = colors.background
+                dropdownFrame.BorderSizePixel = 0
+                dropdownFrame.Parent = sectionContent
+                createCorner(dropdownFrame, 6)
+                
+                local dropdownLabel = Instance.new("TextLabel")
+                dropdownLabel.Size = UDim2.new(0.5, -10, 1, 0)
+                dropdownLabel.Position = UDim2.new(0, 10, 0, 0)
+                dropdownLabel.BackgroundTransparency = 1
+                dropdownLabel.Text = name
+                dropdownLabel.TextColor3 = colors.text
+                dropdownLabel.TextScaled = true
+                dropdownLabel.Font = Enum.Font.Gotham
+                dropdownLabel.TextXAlignment = Enum.TextXAlignment.Left
+                dropdownLabel.Parent = dropdownFrame
+                
+                local dropdownButton = Instance.new("TextButton")
+                dropdownButton.Size = UDim2.new(0.5, -10, 0, 25)
+                dropdownButton.Position = UDim2.new(0.5, 0, 0.5, -12.5)
+                dropdownButton.BackgroundColor3 = colors.secondary
+                dropdownButton.BorderSizePixel = 0
+                dropdownButton.Text = library.flags[flag]
+                dropdownButton.TextColor3 = colors.text
+                dropdownButton.TextScaled = true
+                dropdownButton.Font = Enum.Font.Gotham
+                dropdownButton.Parent = dropdownFrame
+                createCorner(dropdownButton, 4)
+                createStroke(dropdownButton, colors.border, 1)
+                
+                updateSectionSize()
+                if callback then callback(library.flags[flag]) end
             end
-
+            
             function section:AddTextbox(name, flag, default, callback)
                 library.flags[flag] = default or ""
+                
+                local textboxFrame = Instance.new("Frame")
+                textboxFrame.Size = UDim2.new(1, 0, 0, 30)
+                textboxFrame.BackgroundColor3 = colors.background
+                textboxFrame.BorderSizePixel = 0
+                textboxFrame.Parent = sectionContent
+                createCorner(textboxFrame, 6)
+                
+                local textboxLabel = Instance.new("TextLabel")
+                textboxLabel.Size = UDim2.new(0.4, -10, 1, 0)
+                textboxLabel.Position = UDim2.new(0, 10, 0, 0)
+                textboxLabel.BackgroundTransparency = 1
+                textboxLabel.Text = name
+                textboxLabel.TextColor3 = colors.text
+                textboxLabel.TextScaled = true
+                textboxLabel.Font = Enum.Font.Gotham
+                textboxLabel.TextXAlignment = Enum.TextXAlignment.Left
+                textboxLabel.Parent = textboxFrame
+                
+                local textbox = Instance.new("TextBox")
+                textbox.Size = UDim2.new(0.6, -10, 0, 25)
+                textbox.Position = UDim2.new(0.4, 0, 0.5, -12.5)
+                textbox.BackgroundColor3 = colors.secondary
+                textbox.BorderSizePixel = 0
+                textbox.Text = library.flags[flag]
+                textbox.TextColor3 = colors.text
+                textbox.TextScaled = true
+                textbox.Font = Enum.Font.Gotham
+                textbox.PlaceholderText = "Enter text..."
+                textbox.PlaceholderColor3 = colors.textSecondary
+                textbox.Parent = textboxFrame
+                createCorner(textbox, 4)
+                createStroke(textbox, colors.border, 1)
+                
+                textbox.FocusLost:Connect(function()
+                    library.flags[flag] = textbox.Text
+                    if callback then callback(textbox.Text) end
+                end)
+                
+                updateSectionSize()
+                if callback then callback(library.flags[flag]) end
             end
-
+            
             function section:AddBind(name, flag, default, callback)
                 library.binds[flag] = default
+                
+                local bindFrame = Instance.new("Frame")
+                bindFrame.Size = UDim2.new(1, 0, 0, 30)
+                bindFrame.BackgroundColor3 = colors.background
+                bindFrame.BorderSizePixel = 0
+                bindFrame.Parent = sectionContent
+                createCorner(bindFrame, 6)
+                
+                local bindLabel = Instance.new("TextLabel")
+                bindLabel.Size = UDim2.new(0.6, -10, 1, 0)
+                bindLabel.Position = UDim2.new(0, 10, 0, 0)
+                bindLabel.BackgroundTransparency = 1
+                bindLabel.Text = name
+                bindLabel.TextColor3 = colors.text
+                bindLabel.TextScaled = true
+                bindLabel.Font = Enum.Font.Gotham
+                bindLabel.TextXAlignment = Enum.TextXAlignment.Left
+                bindLabel.Parent = bindFrame
+                
+                local bindButton = Instance.new("TextButton")
+                bindButton.Size = UDim2.new(0.4, -10, 0, 25)
+                bindButton.Position = UDim2.new(0.6, 0, 0.5, -12.5)
+                bindButton.BackgroundColor3 = colors.secondary
+                bindButton.BorderSizePixel = 0
+                bindButton.Text = default.Name
+                bindButton.TextColor3 = colors.text
+                bindButton.TextScaled = true
+                bindButton.Font = Enum.Font.Gotham
+                bindButton.Parent = bindFrame
+                createCorner(bindButton, 4)
+                createStroke(bindButton, colors.border, 1)
+                
+                UserInputService.InputBegan:Connect(function(input, gp)
+                    if not gp and input.KeyCode == default then
+                        if callback then callback() end
+                    end
+                end)
+                
+                updateSectionSize()
             end
-
+            
             tab.sections[secName] = section
             return section
         end
-
+        
         window.tabs[name] = tab
+        window.tabButtons[name] = tabButton
         return tab
     end
-
+    
     return window
 end
 
 -- // Settings Tab
 function library:CreateSettingsTab(window)
     local tab = window:AddTab("Settings")
-
-    local sec = tab:AddSection("Configs", 1)
-    sec:AddTextbox("Config Name", "configname", "default")
-    sec:AddToggle("Autosave", "autosave", false)
-
-    sec:AddBind("Save Config", "savebind", Enum.KeyCode.F6, function()
-        self:SaveConfig(self.flags["configname"])
+    local sec = tab:AddSection("General", 1)
+    
+    sec:AddToggle("Watermark", "watermark", true, function(val)
+        if self.watermarkFrame then
+            self.watermarkFrame.Visible = val
+        end
     end)
-
-    sec:AddBind("Load Config", "loadbind", Enum.KeyCode.F7, function()
-        self:LoadConfig(self.flags["configname"])
+    
+    sec:AddToggle("Keybind List", "keybindlist", true, function(val)
+        if self.keybindFrame then
+            self.keybindFrame.Visible = val
+        end
     end)
-
+    
     return tab
+end
+
+-- // Watermark
+function library:Watermark()
+    local watermarkFrame = Instance.new("Frame")
+    watermarkFrame.Name = "Watermark"
+    watermarkFrame.Size = UDim2.new(0, 200, 0, 30)
+    watermarkFrame.Position = UDim2.new(0, 10, 0, 10)
+    watermarkFrame.BackgroundColor3 = colors.background
+    watermarkFrame.BorderSizePixel = 0
+    watermarkFrame.Parent = self.screenGui
+    createCorner(watermarkFrame, 6)
+    createStroke(watermarkFrame, colors.border, 1)
+    
+    local watermarkLabel = Instance.new("TextLabel")
+    watermarkLabel.Size = UDim2.new(1, -20, 1, 0)
+    watermarkLabel.Position = UDim2.new(0, 10, 0, 0)
+    watermarkLabel.BackgroundTransparency = 1
+    watermarkLabel.Text = self.cheatname .. " | " .. self.gamename
+    watermarkLabel.TextColor3 = colors.text
+    watermarkLabel.TextScaled = true
+    watermarkLabel.Font = Enum.Font.GothamBold
+    watermarkLabel.TextXAlignment = Enum.TextXAlignment.Left
+    watermarkLabel.Parent = watermarkFrame
+    
+    self.watermarkFrame = watermarkFrame
+end
+
+-- // Keybind List
+function library:KeybindList()
+    local keybindFrame = Instance.new("Frame")
+    keybindFrame.Name = "KeybindList"
+    keybindFrame.Size = UDim2.new(0, 180, 0, 200)
+    keybindFrame.Position = UDim2.new(1, -190, 0.5, -100)
+    keybindFrame.BackgroundColor3 = colors.background
+    keybindFrame.BorderSizePixel = 0
+    keybindFrame.Parent = self.screenGui
+    createCorner(keybindFrame, 8)
+    createStroke(keybindFrame, colors.border, 1)
+    
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Size = UDim2.new(1, -20, 0, 30)
+    titleLabel.Position = UDim2.new(0, 10, 0, 5)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Text = "Keybinds"
+    titleLabel.TextColor3 = colors.text
+    titleLabel.TextScaled = true
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Parent = keybindFrame
+    
+    local keybindList = Instance.new("ScrollingFrame")
+    keybindList.Size = UDim2.new(1, -20, 1, -40)
+    keybindList.Position = UDim2.new(0, 10, 0, 35)
+    keybindList.BackgroundTransparency = 1
+    keybindList.ScrollBarThickness = 4
+    keybindList.ScrollBarImageColor3 = colors.accent
+    keybindList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    keybindList.Parent = keybindFrame
+    
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Padding = UDim.new(0, 2)
+    listLayout.Parent = keybindList
+    
+    -- Update keybind list dynamically
+    local function updateKeybindList()
+        for _, child in pairs(keybindList:GetChildren()) do
+            if child:IsA("TextLabel") then
+                child:Destroy()
+            end
+        end
+        
+        for flag, bind in pairs(self.binds) do
+            local bindLabel = Instance.new("TextLabel")
+            bindLabel.Size = UDim2.new(1, 0, 0, 20)
+            bindLabel.BackgroundTransparency = 1
+            bindLabel.Text = flag .. " [" .. bind.Name .. "]"
+            bindLabel.TextColor3 = colors.textSecondary
+            bindLabel.TextScaled = true
+            bindLabel.Font = Enum.Font.Gotham
+            bindLabel.TextXAlignment = Enum.TextXAlignment.Left
+            bindLabel.Parent = keybindList
+        end
+        
+        keybindList.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y)
+    end
+    
+    -- Update every second
+    spawn(function()
+        while true do
+            updateKeybindList()
+            wait(1)
+        end
+    end)
+    
+    self.keybindFrame = keybindFrame
 end
 
 return library
