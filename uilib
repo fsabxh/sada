@@ -280,9 +280,29 @@ function UILibrary:CreateWindow(title)
             end
         end)
         
+        -- Add tab to window first
+        table.insert(Window.Tabs, Tab)
+        
         -- Auto-select first tab
-        if #Window.Tabs == 0 then
-            TabButton.MouseButton1Click:Fire()
+        if #Window.Tabs == 1 then
+            -- Manually trigger tab selection for first tab
+            for _, tab in pairs(Window.Tabs) do
+                if tab ~= Tab then
+                    local button = TabList:FindFirstChild(tab.Name)
+                    local content = ContentContainer:FindFirstChild(tab.Name .. "Content")
+                    
+                    if button then
+                        TweenService:Create(button, TweenInfo, {BackgroundColor3 = Config.HoverColor, TextColor3 = Config.SecondaryTextColor}):Play()
+                    end
+                    if content then
+                        content.Visible = false
+                    end
+                end
+            end
+            
+            TweenService:Create(TabButton, TweenInfo, {BackgroundColor3 = Config.AccentColor, TextColor3 = Config.TextColor}):Play()
+            TabContent.Visible = true
+            Window.CurrentTab = Tab
         end
         
         function Tab:CreateButton(text, callback)
@@ -846,8 +866,8 @@ function UILibrary:CreateWindow(title)
             return Section
         end
         
-        table.insert(Window.Tabs, Tab)
         return Tab
+    end
     end
     
     function Window:SetConfig(newConfig)
@@ -876,5 +896,46 @@ function UILibrary:CreateWindow(title)
     return Window
 end
 
+-- Usage Example:
+--[[
+local Library = UILibrary:CreateWindow("My Cool Script")
+
+-- Custom config
+Library:SetConfig({
+    AccentColor = Color3.fromRGB(255, 100, 150),
+    MainColor = Color3.fromRGB(30, 30, 40)
+})
+
+local MainTab = Library:CreateTab("Main")
+local SettingsTab = Library:CreateTab("Settings")
+
+MainTab:CreateSection("Combat")
+MainTab:CreateButton("Kill All", function()
+    print("Kill All clicked!")
+end)
+
+MainTab:CreateToggle("Auto Farm", false, function(state)
+    print("Auto Farm:", state)
+end)
+
+MainTab:CreateSlider("Walk Speed", 16, 100, 16, function(value)
+    print("Walk Speed:", value)
+end)
+
+MainTab:CreateSection("Visuals")
+MainTab:CreateColorPicker("ESP Color", Color3.fromRGB(255, 0, 0), function(color)
+    print("ESP Color:", color)
+end)
+
+MainTab:CreateDropdown("Theme", {"Dark", "Light", "Purple", "Blue"}, function(selected)
+    print("Theme:", selected)
+end)
+
+SettingsTab:CreateTextBox("Username", "Enter username...", function(text)
+    print("Username:", text)
+end)
+
+SettingsTab:CreateLabel("Made by YourName")
+--]]
 
 return UILibrary
